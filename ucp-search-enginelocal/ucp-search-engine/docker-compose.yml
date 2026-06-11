@@ -1,0 +1,76 @@
+version: "3.8"
+
+services:
+  # Elasticsearch for transactional entity indexing
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: ucp-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for operational data + CDC
+  postgres:
+    image: postgres:15-alpine
+    container_name: ucp-postgres
+    environment:
+      POSTGRES_USER: ucp
+      POSTGRES_PASSWORD: ucp_dev
+      POSTGRES_DB: ucp_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./server/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ucp -d ucp_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis for session caching + real-time pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: ucp-redis
+    ports:
+      - "6379:6379"
+
+  # API Server (Node.js/Express)
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ucp-api
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - ELASTIC_URL=http://elasticsearch:9200
+      - DATABASE_URL=postgresql://ucp:ucp_dev@postgres:5432/ucp_platform
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "4000:4000"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    command: npm run dev
+
+volumes:
+  es_data:
+  pg_data:

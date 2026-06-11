@@ -1,0 +1,84 @@
+{
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "analyzer": "standard",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "subtitle": {
+        "type": "text"
+      },
+      "content": {
+        "type": "text"
+      },
+      "doc_type": {
+        "type": "keyword"
+      },
+      "service_domains": {
+        "type": "keyword"
+      },
+      "workflow_id": {
+        "type": "keyword"
+      },
+      "client_id": {
+        "type": "keyword"
+      },
+      "owner_id": {
+        "type": "keyword"
+      },
+      "org_id": {
+        "type": "keyword"
+      },
+      "status": {
+        "type": "keyword"
+      },
+      "region_code": {
+        "type": "keyword"
+      },
+      "tags": {
+        "type": "keyword"
+      },
+      "last_modified": {
+        "type": "date"
+      },
+      "created_at": {
+        "type": "date"
+      },
+      "workflow_url": {
+        "type": "keyword"
+      },
+      "icon": {
+        "type": "keyword"
+      },
+      "color": {
+        "type": "keyword"
+      },
+      "json_payload": {
+        "type": "object",
+        "enabled": false
+      }
+    }
+  },
+  "settings": {
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "analysis": {
+      "analyzer": {
+        "ucp_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding",
+            "word_delimiter"
+          ]
+        }
+      }
+    }
+  }
+}

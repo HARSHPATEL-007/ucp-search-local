@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UCP Search Engine - Demo</title>
+  <link rel="stylesheet" href="web/styles/search-shell.css">
+  <style>
+    :root {
+      --surface-primary: #ffffff;
+      --surface-secondary: #f9fafb;
+      --surface-hover: #f3f4f6;
+      --surface-selected: #eff6ff;
+      --text-primary: #111827;
+      --text-secondary: #4b5563;
+      --text-tertiary: #9ca3af;
+      --border-color: #e5e7eb;
+      --border-selected: #bfdbfe;
+      --primary-bg: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-text: #ffffff;
+      --chip-bg: #eff6ff;
+      --chip-text: #1e40af;
+      --chip-border: #bfdbfe;
+      --badge-bg: #f3f4f6;
+      --badge-text: #6b7280;
+      --scope-bg: #f0fdf4;
+      --scope-text: #166534;
+      --scope-border: #bbf7d0;
+      --type-bg: #e0e7ff;
+      --type-text: #3730a3;
+      --kbd-bg: #f3f4f6;
+      --kbd-border: #d1d5db;
+      --kbd-text: #374151;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 40px;
+      background: #f3f4f6;
+    }
+    .demo-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .demo-header h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+      color: #111827;
+    }
+    .demo-header p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .demo-controls {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .demo-btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .demo-btn:hover {
+      background: #f3f4f6;
+    }
+    .demo-btn.primary {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
+    .demo-status {
+      text-align: center;
+      font-size: 12px;
+      color: #9ca3af;
+      margin-bottom: 20px;
+    }
+    .demo-status.connected {
+      color: #10b981;
+    }
+    .demo-status.error {
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-header">
+    <h1>🔍 UCP Search Engine</h1>
+    <p>Browser-in-Browser (BiB) Desktop Shell Demo</p>
+    <p style="font-size: 12px; color: #9ca3af; margin-top: 4px;">Press <kbd style="padding: 2px 6px; border-radius: 4px; background: #f3f4f6; border: 1px solid #d1d5db;">Cmd+K</kbd> or click the button below</p>
+  </div>
+
+  <div class="demo-controls">
+    <button class="demo-btn primary" onclick="toggleSearch()">Open Search (Cmd+K)</button>
+    <button class="demo-btn" onclick="seedData()">Seed Demo Data</button>
+    <button class="demo-btn" onclick="testConnection()">Test API</button>
+  </div>
+
+  <div class="demo-status" id="status">API: checking...</div>
+
+  <!-- Search Modal -->
+  <div id="searchOverlay" class="bib-search-overlay" style="display: none;" onclick="closeSearch(event)">
+    <div class="bib-search-modal" onclick="event.stopPropagation()">
+      <div class="bib-search-input-container">
+        <div class="bib-prefix-chips" id="prefixChips"></div>
+        <input
+          type="text"
+          id="searchInput"
+          class="bib-search-input"
+          placeholder="Search financial services... (try: /service:lending credit)"
+          autocomplete="off"
+          oninput="handleInput(this.value)"
+          onkeydown="handleKeyDown(event)"
+        />
+        <div class="bib-context-badge">
+          <span class="bib-scope-indicator" id="scopeIndicator">Scoped: all</span>
+        </div>
+      </div>
+
+      <div class="bib-search-body">
+        <div class="bib-result-list" id="resultList">
+          <div class="bib-result-empty">
+            <p>Type to search...</p>
+            <span class="bib-hint">Try: PCAOB, lending, DCM, or /service:audit</span>
+          </div>
+        </div>
+        <div class="bib-preview-pane bib-preview-pane--empty" id="previewPane">
+          <p>Hover over a result to preview</p>
+        </div>
+      </div>
+
+      <div class="bib-search-footer">
+        <kbd>↵</kbd> Open <kbd>⌘↵</kbd> Split <kbd>↑↓</kbd> Navigate <kbd>Esc</kbd> Close
+        <span style="margin-left: auto;">API: <span id="apiStatus">checking</span></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:4000';
+    let searchResults = [];
+    let selectedIndex = 0;
+    let currentQuery = '';
+
+    // Keyboard shortcut: Cmd+K / Ctrl+K
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        toggleSearch();
+      }
+      if (e.key === 'Escape') {
+        closeSearch();
+      }
+    });
+
+    function toggleSearch() {
+      const overlay = document.getElementById('searchOverlay');
+      if (overlay.style.display === 'none') {
+        overlay.style.display = 'flex';
+        document.getElementById('searchInput').focus();
+      } else {
+        closeSearch();
+      }
+    }
+
+    function closeSearch(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById('searchOverlay').style.display = 'none';
+      document.getElementById('searchInput').value = '';
+      searchResults = [];
+      renderResults();
+    }
+
+    function handleInput(value) {
+      currentQuery = value;
+      extractFlags(value);
+
+      if (value.length < 2) {
+        searchResults = [];
+        renderResults();
+        return;
+      }
+
+      // Debounced search
+      clearTimeout(window.searchTimeout);
+      window.searchTimeout = setTimeout(() => performSearch(value), 150);
+    }
+
+    function extractFlags(input) {
+      const chips = document.getElementById('prefixChips');
+      const regex = /\/([a-zA-Z_]+):([^\s]+)/g;
+      const flags = [];
+      let match;
+
+      while ((match = regex.exec(input)) !== null) {
+        flags.push({ prefix: match[1], value: match[2] });
+      }
+
+      chips.innerHTML = flags.map(f => `
+        <span class="bib-chip bib-chip--${f.prefix}">
+          ${f.prefix}: ${f.value}
+          <button onclick="removeFlag('${f.prefix}', '${f.value}')">×</button>
+        </span>
+      `).join('');
+
+      // Update scope indicator
+      const serviceFlag = flags.find(f => f.prefix === 'service');
+      document.getElementById('scopeIndicator').textContent = 
+        serviceFlag ? `Scoped: ${serviceFlag.value}` : 'Scoped: all';
+    }
+
+    function removeFlag(prefix, value) {
+      const input = document.getElementById('searchInput');
+      input.value = input.value.replace(`/${prefix}:${value}`, '').trim().replace(/\s+/g, ' ');
+      handleInput(input.value);
+      input.focus();
+    }
+
+    async function performSearch(query) {
+      try {
+        const response = await fetch(`${API_URL}/api/search/elastic`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: query,
+            parsed: { textTokens: query.split(/\s+/).filter(t => !t.startsWith('/')), prefixFlags: [] },
+            context: {
+              userId: 'demo_user',
+              orgId: 'demo_org',
+              activeServiceDomain: 'audit_assurance',
+              activeWorkflowId: 'wf_audit_001',
+              recentWorkflowIds: ['wf_audit_001', 'wf_lending_001']
+            },
+            sessionId: 'demo_session'
+          })
+        });
+
+        if (!response.ok) throw new Error('Search failed');
+
+        const data = await response.json();
+        searchResults = data.results || [];
+        selectedIndex = 0;
+        renderResults();
+
+        if (searchResults.length > 0) {
+          showPreview(searchResults[0]);
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+        // Fallback to local demo results
+        searchResults = getLocalResults(query);
+        selectedIndex = 0;
+        renderResults();
+      }
+    }
+
+    function getLocalResults(query) {
+      const all = [
+        { id: 'audit_001', type: 'workflow', title: 'PCAOB AS 2201 - Integrated Audit', subtitle: 'Financial statement audit', metadata: { badges: ['audit_assurance'], lastModified: Date.now() }, score: 2.5, contextRelevance: 0.95, source: 'local_trie' },
+        { id: 'lending_001', type: 'entity', title: 'Revolving Credit Facility - $50M', subtitle: 'Committed revolving line', metadata: { badges: ['lending'], lastModified: Date.now() }, score: 1.8, contextRelevance: 0.7, source: 'local_trie' },
+        { id: 'dcm_001', type: 'workflow', title: 'DCM Bookbuilding - High-Yield Bond', subtitle: '$300M 8.5% Senior Notes', metadata: { badges: ['dcm'], lastModified: Date.now() }, score: 1.5, contextRelevance: 0.6, source: 'local_trie' },
+        { id: 'trade_001', type: 'transaction', title: 'Letter of Credit - MT700', subtitle: 'Standby LC for commodity trade', metadata: { badges: ['trade_finance'], lastModified: Date.now() }, score: 1.2, contextRelevance: 0.5, source: 'local_trie' },
+      ];
+      const q = query.toLowerCase();
+      return all.filter(r => 
+        r.title.toLowerCase().includes(q) || 
+        r.subtitle.toLowerCase().includes(q) ||
+        r.metadata.badges.some(b => b.includes(q.replace('service:', '')))
+      );
+    }
+
+    function renderResults() {
+      const list = document.getElementById('resultList');
+
+      if (searchResults.length === 0) {
+        list.innerHTML = `
+          <div class="bib-result-empty">
+            <p>No results found</p>
+            <span class="bib-hint">Try: PCAOB, lending, DCM, or /service:audit</span>
+          </div>`;
+        return;
+      }
+
+      list.innerHTML = searchResults.map((r, idx) => `
+        <div class="bib-result-item ${idx === selectedIndex ? 'bib-result-item--selected' : ''}"
+             onclick="selectResult(${idx})"
+             onmouseenter="showPreview(searchResults[${idx}])">
+          <div class="bib-result-icon">${r.metadata?.icon || '🔍'}</div>
+          <div class="bib-result-content">
+            <div class="bib-result-title">
+              ${r.title}
+              ${(r.metadata?.badges || []).map(b => `<span class="bib-badge">${b}</span>`).join('')}
+            </div>
+            ${r.subtitle ? `<div class="bib-result-subtitle">${r.subtitle}</div>` : ''}
+            <div class="bib-result-meta">
+              <span class="bib-score">Score: ${r.score?.toFixed(2) || '1.00'}</span>
+              <span class="bib-relevance">Relevance: ${((r.contextRelevance || 0.5) * 100).toFixed(0)}%</span>
+              <span class="bib-source">${r.source || 'local'}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectResult(idx) {
+      selectedIndex = idx;
+      renderResults();
+      showPreview(searchResults[idx]);
+    }
+
+    function showPreview(result) {
+      const pane = document.getElementById('previewPane');
+      if (!result) {
+        pane.innerHTML = '<p>Hover over a result to preview</p>';
+        pane.className = 'bib-preview-pane bib-preview-pane--empty';
+        return;
+      }
+
+      pane.className = 'bib-preview-pane';
+      pane.innerHTML = `
+        <div class="bib-preview-header">
+          <h3>${result.title}</h3>
+          <span class="bib-preview-type">${result.type}</span>
+        </div>
+        ${result.subtitle ? `<p class="bib-preview-subtitle">${result.subtitle}</p>` : ''}
+        <div class="bib-preview-metadata">
+          <div class="bib-meta-row"><span class="bib-meta-label">Source:</span><span class="bib-meta-value">${result.source || 'local'}</span></div>
+          <div class="bib-meta-row"><span class="bib-meta-label">Score:</span><span class="bib-meta-value">${result.score?.toFixed(3) || '1.000'}</span></div>
+          <div class="bib-meta-row"><span class="bib-meta-label">Context Relevance:</span><span class="bib-meta-value">${((result.contextRelevance || 0.5) * 100).toFixed(1)}%</span></div>
+        </div>
+        <div class="bib-preview-badges">
+          ${(result.metadata?.badges || []).map(b => `<span class="bib-preview-badge">${b}</span>`).join('')}
+        </div>
+        <div class="bib-preview-actions">
+          <button class="bib-action-btn bib-action-btn--primary" onclick="alert('Opening: ${result.title}')">Open</button>
+          <button class="bib-action-btn" onclick="alert('Pinned: ${result.title}')">Pin</button>
+          <button class="bib-action-btn" onclick="alert('Shared: ${result.title}')">Share</button>
+        </div>
+      `;
+    }
+
+    function handleKeyDown(e) {
+      if (!searchResults.length) return;
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          selectedIndex = Math.min(selectedIndex + 1, searchResults.length - 1);
+          renderResults();
+          showPreview(searchResults[selectedIndex]);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          selectedIndex = Math.max(selectedIndex - 1, 0);
+          renderResults();
+          showPreview(searchResults[selectedIndex]);
+          break;
+        case 'Enter':
+          e.preventDefault();
+          const action = e.metaKey || e.ctrlKey ? 'Split' : 'Open';
+          alert(`${action}: ${searchResults[selectedIndex]?.title}`);
+          break;
+      }
+    }
+
+    async function testConnection() {
+      const statusEl = document.getElementById('status');
+      try {
+        const res = await fetch(`${API_URL}/health`, { method: 'GET' });
+        if (res.ok) {
+          const data = await res.json();
+          statusEl.textContent = `API: connected (${data.timestamp})`;
+          statusEl.className = 'demo-status connected';
+          document.getElementById('apiStatus').textContent = 'connected';
+        } else {
+          throw new Error('Not OK');
+        }
+      } catch (err) {
+        statusEl.textContent = 'API: offline (running in local-only mode)';
+        statusEl.className = 'demo-status error';
+        document.getElementById('apiStatus').textContent = 'offline';
+      }
+    }
+
+    async function seedData() {
+      try {
+        const res = await fetch(`${API_URL}/api/search/seed`, { method: 'POST' });
+        const data = await res.json();
+        alert(`Seeded ${data.seeded} demo entities into Elasticsearch`);
+      } catch (err) {
+        alert('Failed to seed. Is the API running?');
+      }
+    }
+
+    // Check connection on load
+    testConnection();
+  </script>
+</body>
+</html>
